@@ -1,0 +1,14 @@
+# data
+*.xlsx
+Data/
+
+# project file
+.idea
+.ipynb_checkpoints
+__pycache__
+
+# file system directory
+.DS_Store
+
+# compiled file
+*.pyc
