@@ -221,13 +221,11 @@ def get_wordnet_pos(treebank_tag):
     else:
         return wordnet.NOUN
 
-
 def remove_puncdigit(s):
     s = str(s)
     s = s.translate(None, string.punctuation)
     s = s.translate(None, string.digits)
     return s
-
 
 def list2str(l):
     s = ''
@@ -235,13 +233,57 @@ def list2str(l):
         s = ' '.join([s, remove_puncdigit(foo)])
     return s
 
-# to bag of words
-def df2text(df, fields=''):
-    text = []
+#
+def null2empty(df, field):
+    # foo = df[(~df['Past'].isnull()) & (df['Past'] != 0)]
+    if isinstance(field, basestring) and field in df:
+        bar = df[field]
+        bar.loc[bar.isnull()] = bar.loc[bar.isnull()].apply(lambda x: [])
+        df[field] = bar
+        return df
+    elif isinstance(field, list):
+        for f in field:
+            if f not in df:
+                continue
+            bar = df[f]
+            bar.loc[bar.isnull()] = bar.loc[bar.isnull()].apply(lambda x: [])
+            df[f] = bar
+    return df
+
+
+## Get Bag of ngrams and transforms
+import operator
+from sklearn.feature_extraction.text import TfidfTransformer
+
+def df2texts(df, field):
+    texts = []
     for _, item in df.iterrows():
-        foo = remove_puncdigit(item[fields])
-        text.append(foo.strip())
-    return text
+        if isinstance(item[field], basestring):
+            foo = remove_puncdigit(item[field])
+        elif isinstance(item[field], list):
+            foo = ''
+            for sent in item[field]:
+                sent = remove_puncdigit(sent)
+                foo = ' '.join([foo, sent])
+        texts.append(foo.strip())
+    return texts
+
+def ngram_counter(texts, ngram=1, min_count=2):
+    dic = defaultdict(int)
+    for text in texts:
+        words = text.split()
+        for left in range(len(words)):
+            for right in range(left+1, min(len(words)+1, left+ngram+1)):
+                dic[' '.join(words[left:right])] += 1
+    dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
+    word2idx = {}
+    idx2word = {}
+    for idx, item in enumerate(dic):
+        if item[1] < min_count:
+            break
+        word2idx[item[0]] = idx
+        idx2word[idx] = item[0]
+    return word2idx, idx2word
 
 # text to matrix
 def text2data(texts, word2idx):
@@ -261,7 +303,6 @@ def text2data(texts, word2idx):
     data = scipy.sparse.csr_matrix((d, (r, c)), shape=(len(texts), len(word2idx)))
     return data
 
-
 # matrix to text (bag of words)
 def data2text(data, idx2word):
     cx = data.tocoo()
@@ -270,19 +311,32 @@ def data2text(data, idx2word):
         text[i].append(idx2word[j])
     return text
 
-def null2empty(df, field):
-    # foo = df[(~df['Past'].isnull()) & (df['Past'] != 0)]
-    if isinstance(field, basestring) and field in df:
-        bar = df[field]
-        bar.loc[bar.isnull()] = bar.loc[bar.isnull()].apply(lambda x: [])
-        df[field] = bar
-        return df
-    elif isinstance(field, list):
-        for f in field:
-            if f not in df:
-                continue
-            bar = df[f]
-            bar.loc[bar.isnull()] = bar.loc[bar.isnull()].apply(lambda x: [])
-            df[f] = bar
-    return df
+# raw frequency to tfidf
+def data2tfidf(data):
+    transform = TfidfTransformer()
+    return transform.fit_transform(data)
 
+# dataframe to tfidf wrapper (multi-fields)
+def df2tfidf(df, fields, ngram=1, min_count=2):
+    """
+
+    :param data:
+    :param fields: a list of field
+    :return:
+    """
+    outputs = {}
+    for field in fields:
+        if field not in df.columns:
+            continue
+        texts = df2texts(df, field)
+        word2idx, idx2word = ngram_counter(texts, ngram=ngram, min_count=min_count)
+        bow_count = text2data(texts, word2idx)
+        bow_tfidf = data2tfidf(bow_count)
+        foo = {}
+        foo['texts'] = texts
+        foo['word2idx'] = word2idx
+        foo['idx2word'] = idx2word
+        foo['bow_count'] = bow_count
+        foo['bow_tfidf'] = bow_tfidf
+        outputs[field] = foo
+    return outputs
