@@ -317,26 +317,35 @@ def data2tfidf(data):
     return transform.fit_transform(data)
 
 # dataframe to tfidf wrapper (multi-fields)
-def df2tfidf(df, fields, ngram=1, min_count=2):
-    """
 
-    :param data:
-    :param fields: a list of field
-    :return:
-    """
-    outputs = {}
-    for field in fields:
-        if field not in df.columns:
-            continue
-        texts = df2texts(df, field)
-        word2idx, idx2word = ngram_counter(texts, ngram=ngram, min_count=min_count)
-        bow_count = text2data(texts, word2idx)
-        bow_tfidf = data2tfidf(bow_count)
-        foo = {}
-        foo['texts'] = texts
-        foo['word2idx'] = word2idx
-        foo['idx2word'] = idx2word
-        foo['bow_count'] = bow_count
-        foo['bow_tfidf'] = bow_tfidf
-        outputs[field] = foo
-    return outputs
+class Df2TFIDF(object):
+    def __init__(self):
+        self.word2idx = {}
+        self.idx2word = {}
+
+    def fit(self, df, fields, ngram=1, min_count=2):
+        for field in fields:
+            if field not in df.columns:
+                continue
+            texts = df2texts(df, field)
+            word2idx, idx2word = ngram_counter(texts, ngram=ngram, min_count=min_count)
+            self.word2idx[field] = word2idx
+            self.idx2word[field] = idx2word
+
+    def transform(self, df, fields):
+        outputs = {}
+        for field in fields:
+            if field not in df.columns:
+                continue
+            texts = df2texts(df, field)
+            word2idx, idx2word = self.word2idx[field], self.idx2word[field]
+            bow_count = text2data(texts, word2idx)
+            bow_tfidf = data2tfidf(bow_count)
+            foo = {}
+            foo['texts'] = texts
+            foo['word2idx'] = word2idx
+            foo['idx2word'] = idx2word
+            foo['bow_count'] = bow_count
+            foo['bow_tfidf'] = bow_tfidf
+            outputs[field] = foo
+        return outputs
