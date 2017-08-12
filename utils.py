@@ -286,16 +286,18 @@ def ngram_counter(texts, ngram=1, min_count=2):
     return word2idx, idx2word
 
 # text to matrix
-def text2data(texts, word2idx):
+def text2data(texts, word2idx, ngram):
     d = []  # counts
     r = []  # report index
     c = []  # word index
     for idx, text in enumerate(texts):
         foo = defaultdict(int)  # X: default value is 0
-        for word in text.split():
-            if word not in word2idx:  # we might to need to deal with short forms
-                continue
-            foo[word2idx[word]] += 1
+        words = text.split()
+        for left in range(len(words)):
+            for right in range(left+1, min(len(words)+1, left+ngram+1)):
+                word = ' '.join(words[left:right])
+                if word not in word2idx: continue
+                foo[word2idx[word]] += 1
         for k, v in foo.iteritems():
             d.append(v)
             r.append(idx)
@@ -322,8 +324,10 @@ class Df2TFIDF(object):
     def __init__(self):
         self.word2idx = {}
         self.idx2word = {}
+        self.ngram = None
 
     def fit(self, df, fields, ngram=1, min_count=2):
+        self.ngram = ngram
         for field in fields:
             if field not in df.columns:
                 continue
@@ -339,7 +343,7 @@ class Df2TFIDF(object):
                 continue
             texts = df2texts(df, field)
             word2idx, idx2word = self.word2idx[field], self.idx2word[field]
-            bow_count = text2data(texts, word2idx)
+            bow_count = text2data(texts, word2idx, self.ngram)
             bow_tfidf = data2tfidf(bow_count)
             foo = {}
             foo['texts'] = texts
