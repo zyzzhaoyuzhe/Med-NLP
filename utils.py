@@ -1,22 +1,48 @@
+from __future__ import division
+
+import itertools
 import re
+import string
+from collections import OrderedDict, defaultdict
+
 import pandas as pd
 import numpy as np
-from collections import OrderedDict, defaultdict
-import string
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.stem import WordNetLemmatizer
-from nltk.corpus import wordnet
-from fuzzywuzzy import fuzz
 import scipy.sparse
-import itertools
+import sklearn
+from fuzzywuzzy import fuzz
+from nltk.corpus import wordnet
+from nltk.tokenize import word_tokenize
 
-# function definition
+
+VELO_NAMES = {
+    'cca': ['common carotid', 'cca'],
+    'bulb': ['carotid bulb'],
+    'eca': ['external carotid'],
+    'ica': ['internal carotid', 'ica']
+}
+
+PREFIX = {'p': ['proximal', 'prox'],
+          'd': ['distal', 'dist'],
+          'm': ['middle', 'mid'],
+          }
+
+NAMES = {
+    'study': ['study', 'examination'],
+    'findings': ['findings'],
+    'impression': ['impression'],
+    'history': ['history', 'indication'],
+    'comparison': ['comparison'],
+    'technique': ['technique'],
+    'signed by': ['signed by'],
+}
+
+
+# Parsing
 class Parser(object):
-    def __init__(self, fuzzyName, sample_sent={}):
+    def __init__(self, sample_sent={}):
         self.df = pd.DataFrame()
         self.lastfound = []
-        self.fuzzyName = fuzzyName
+        self.fuzzyName = NAMES
         self.sample_sent = sample_sent
 
     @staticmethod
@@ -80,35 +106,19 @@ def myisnumber(s):
     return not p.match(s) is None
 
 
-# def clean_velofield(s, prefix, velo_fields):
-#     pre = ''
-#     main = ''
-#     for k, v in prefix.iteritems():
-#         if k in s:
-#             pre = v
-#     for k, v in velo_fields.iteritems():
+# def find_field(s):
+#     velo_fields = {}
+#     velo_fields['cca'] = ['common carotid', 'cca']
+#     velo_fields['bulb'] = ['carotid bulb']
+#     velo_fields['eca'] = ['external carotid']
+#     velo_fields['ica'] = ['internal carotid', 'ica']
+#     for k, v in velo_fields:
 #         for vv in v:
-#             if vv in s:
-#                 main = k
-#                 break
-#     if main:
-#         return '_'.join([pre, main])
-#     else:
-#         return ''
-
-def find_field(s):
-    velo_fields = {}
-    velo_fields['cca'] = ['common carotid', 'cca']
-    velo_fields['bulb'] = ['carotid bulb']
-    velo_fields['eca'] = ['external carotid']
-    velo_fields['ica'] = ['internal carotid', 'ica']
-    for k, v in velo_fields:
-        for vv in v:
-            st = s.find(vv)
-            if st != -1:
-                ed = start + len(vv)
-                return s[:start] + s[ed:], k
-    return '', None
+#             st = s.find(vv)
+#             if st != -1:
+#                 ed = start + len(vv)
+#                 return s[:start] + s[ed:], k
+#     return '', None
 
 
 def find_dic(s, dic):
@@ -125,17 +135,8 @@ def find_dic(s, dic):
 
 def fieldnvelo(s):
     output = []
-    velo_fields = {'cca': ['common carotid', 'cca'],
-                   'bulb': ['carotid bulb'],
-                   'eca': ['external carotid'],
-                   'ica': ['internal carotid', 'ica']
-                   }
-    prefix = {'p': ['proximal', 'prox'],
-              'd': ['distal', 'dist'],
-              'm': ['middle', 'mid'],
-              }
-    re_fields = find_dic(s, velo_fields)
-    re_prefix = find_dic(s, prefix)
+    re_fields = find_dic(s, VELO_NAMES)
+    re_prefix = find_dic(s, PREFIX)
     if re_fields:
         if re_prefix:
             for st, ed, k in re_prefix:
@@ -174,7 +175,6 @@ def fieldnvelo(s):
     return output
 
 
-# parse findings
 def parse_findings(sents):
     if not isinstance(sents, list):
         return [], []
@@ -201,14 +201,12 @@ def parse_findings(sents):
     return text, velos
 
 
-# save to file
 def save(df, filename):
     df_output = pd.DataFrame(df['Report Text'].tolist())
     df_output = df_output.applymap(lambda x: '\n'.join(x) if isinstance(x, list) else x)
     df_output.to_excel(filename)
 
 
-# pos_tag to wordnet_pos
 def get_wordnet_pos(treebank_tag):
     if treebank_tag.startswith('J'):
         return wordnet.ADJ
@@ -221,17 +219,20 @@ def get_wordnet_pos(treebank_tag):
     else:
         return wordnet.NOUN
 
+
 def remove_puncdigit(s):
     s = str(s)
     s = s.translate(None, string.punctuation)
     s = s.translate(None, string.digits)
     return s
 
+
 def list2str(l):
-    s = ''
-    for foo in l:
-        s = ' '.join([s, remove_puncdigit(foo)])
-    return s
+    if isinstance(l, list):
+        return ' '.join(l)
+    else:
+        return l
+
 
 #
 def null2empty(df, field):
@@ -255,6 +256,7 @@ def null2empty(df, field):
 import operator
 from sklearn.feature_extraction.text import TfidfTransformer
 
+
 def df2texts(df, field):
     texts = []
     for _, item in df.iterrows():
@@ -268,22 +270,24 @@ def df2texts(df, field):
         texts.append(foo.strip())
     return texts
 
+
 def ngram_counter(texts, ngram=1, min_count=2):
     dic = defaultdict(int)
     for text in texts:
         words = text.split()
         for left in range(len(words)):
-            for right in range(left+1, min(len(words)+1, left+ngram+1)):
+            for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
                 dic[' '.join(words[left:right])] += 1
     dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
     word2idx = {}
-    idx2word = {}
+    idx2word = []
     for idx, item in enumerate(dic):
         if item[1] < min_count:
             break
         word2idx[item[0]] = idx
-        idx2word[idx] = item[0]
+        idx2word.append(item[0])
     return word2idx, idx2word
+
 
 # text to matrix
 def text2data(texts, word2idx, ngram):
@@ -294,7 +298,7 @@ def text2data(texts, word2idx, ngram):
         foo = defaultdict(int)  # X: default value is 0
         words = text.split()
         for left in range(len(words)):
-            for right in range(left+1, min(len(words)+1, left+ngram+1)):
+            for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
                 word = ' '.join(words[left:right])
                 if word not in word2idx: continue
                 foo[word2idx[word]] += 1
@@ -305,6 +309,7 @@ def text2data(texts, word2idx, ngram):
     data = scipy.sparse.csr_matrix((d, (r, c)), shape=(len(texts), len(word2idx)))
     return data
 
+
 # matrix to text (bag of words)
 def data2text(data, idx2word):
     cx = data.tocoo()
@@ -313,22 +318,25 @@ def data2text(data, idx2word):
         text[i].append(idx2word[j])
     return text
 
+
 # raw frequency to tfidf
 def data2tfidf(data):
     transform = TfidfTransformer()
     return transform.fit_transform(data)
 
-# dataframe to tfidf wrapper (multi-fields)
 
+# dataframe to tfidf wrapper (multi-fields)
 class Df2TFIDF(object):
     def __init__(self):
+        self.names = None
         self.word2idx = {}
         self.idx2word = {}
         self.ngram = None
 
-    def fit(self, df, fields, ngram=1, min_count=2):
+    def fit(self, df, names, ngram=1, min_count=2):
+        self.names = names
         self.ngram = ngram
-        for field in fields:
+        for field in names:
             if field not in df.columns:
                 continue
             texts = df2texts(df, field)
@@ -353,3 +361,30 @@ class Df2TFIDF(object):
             foo['bow_tfidf'] = bow_tfidf
             outputs[field] = foo
         return outputs
+
+    @property
+    def idx2word_concat(self):
+        output = []
+        for field in self.names:
+            output += self.idx2word[field]
+        return output
+
+
+# Display Results.
+def my_classification_report(y_true, y_pred):
+    labels = sorted(set(y_true))
+    CM = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=labels)
+    CM = pd.DataFrame(CM, columns=labels, index=labels)
+    sensitivity = CM.iloc[1, 1] / CM.iloc[1, :].sum()
+    specificity = CM.iloc[0, 0] / CM.iloc[0, :].sum()
+    precision = CM.iloc[1, 1] / CM.iloc[:, 1].sum()
+    NPV = CM.iloc[0, 0] / CM.iloc[:, 0].sum()
+    accuracy = np.trace(CM.values) / CM.values.sum()
+
+    output = pd.Series({'sensitivity': sensitivity,
+                        'specificity': specificity,
+                        'precision': precision,
+                        'NPV': NPV,
+                        'accuracy': accuracy,
+                        })
+    return output
