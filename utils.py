@@ -49,22 +49,24 @@ class Parser(object):
     def preprocess(s):
         ## preprocess
         s = s.split('\n')
-        s = map(string.lower, s)
-        s = map(string.strip, s)
+        s = map(lambda x: x.lower().strip(), s)
+        #
+        # s = map(string.lower, s)
+        # s = map(string.strip, s)
         # remove empty line
         s = list(filter(None, s))
         return s
 
-    def parser(self, df_raw):
+    def parse(self, df_raw):
         for idx, s in df_raw['Report Text'].iteritems():
             # reset lastfound
             self.lastfound = ['study']
             s = self.preprocess(s)
-            doc = self._parser(s)
+            doc = self._parse(s)
             doc['Report Text'] = s
             self.df = self.df.append(doc, ignore_index=True)
 
-    def _parser(self, s):
+    def _parse(self, s):
         doc = OrderedDict()
         # line number that contains
         for line in s:
@@ -85,7 +87,7 @@ class Parser(object):
         return doc
 
     def trueField(self, content):
-        if set(self.lastfound) == set([u'findings', u'technique']):
+        if set(self.lastfound) == {u'findings', u'technique'}:
             if fuzz.ratio(content, 'gray scale, color and pulsed doppler imaging were utilized.') > 70:
                 return u'technique'
             else:
@@ -95,7 +97,7 @@ class Parser(object):
 
     def isvalidfield(self, name):
         found = []
-        for k, v in self.fuzzyName.iteritems():
+        for k, v in self.fuzzyName.items():
             if any(name in tmp or tmp in name for tmp in v):
                 found.append(k)
         return found
@@ -123,7 +125,7 @@ def myisnumber(s):
 
 def find_dic(s, dic):
     output = []
-    for k, v in dic.iteritems():
+    for k, v in dic.items():
         for vv in v:
             st = s.find(vv)
             if st != -1:
@@ -183,7 +185,8 @@ def parse_findings(sents):
     text = []
     # new
     for idx, sent in enumerate(sents):
-        tokens = word_tokenize(str(sent).translate(None, string.punctuation))
+        tokens = word_tokenize(str(sent).translate(str.maketrans('', '', string.punctuation)))
+        # tokens = word_tokenize(str(sent).translate(None, string.punctuation))
         # update right or left
         if 'left' in tokens and 'right' not in tokens:
             flag_lr = 'l'
@@ -222,8 +225,8 @@ def get_wordnet_pos(treebank_tag):
 
 def remove_puncdigit(s):
     s = str(s)
-    s = s.translate(None, string.punctuation)
-    s = s.translate(None, string.digits)
+    s = s.translate(str.maketrans('', '', string.punctuation))
+    s = s.translate(str.maketrans('', '', string.digits))
     return s
 
 
@@ -236,8 +239,9 @@ def list2str(l):
 
 #
 def null2empty(df, field):
+    "Change null to [] in the dataframe"
     # foo = df[(~df['Past'].isnull()) & (df['Past'] != 0)]
-    if isinstance(field, basestring) and field in df:
+    if isinstance(field, str) and field in df:
         bar = df[field]
         bar.loc[bar.isnull()] = bar.loc[bar.isnull()].apply(lambda x: [])
         df[field] = bar
@@ -260,7 +264,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 def df2texts(df, field):
     texts = []
     for _, item in df.iterrows():
-        if isinstance(item[field], basestring):
+        if isinstance(item[field], str):
             foo = remove_puncdigit(item[field])
         elif isinstance(item[field], list):
             foo = ''
@@ -272,6 +276,7 @@ def df2texts(df, field):
 
 
 def ngram_counter(texts, ngram=1, min_count=2):
+    "build vocab and return word2idx, idx2word. texts are list of space sperated words."
     dic = defaultdict(int)
     for text in texts:
         words = text.split()
@@ -302,7 +307,7 @@ def text2data(texts, word2idx, ngram):
                 word = ' '.join(words[left:right])
                 if word not in word2idx: continue
                 foo[word2idx[word]] += 1
-        for k, v in foo.iteritems():
+        for k, v in foo.items():
             d.append(v)
             r.append(idx)
             c.append(k)
@@ -314,7 +319,7 @@ def text2data(texts, word2idx, ngram):
 def data2text(data, idx2word):
     cx = data.tocoo()
     text = [[] for _ in range(data.shape[0])]
-    for i, j in itertools.izip(cx.row, cx.col):
+    for i, j in zip(cx.row, cx.col):
         text[i].append(idx2word[j])
     return text
 
