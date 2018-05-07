@@ -293,21 +293,21 @@ def ngram_counter(texts, ngram=1, min_count=2):
         idx2word.append(item[0])
     return word2idx, idx2word
 
-
 # text to matrix
 def text2data(texts, word2idx, ngram):
+    "text to bag of words sparse matrix"
     d = []  # counts
     r = []  # report index
     c = []  # word index
     for idx, text in enumerate(texts):
-        foo = defaultdict(int)  # X: default value is 0
+        cache = defaultdict(int)  # X: default value is 0
         words = text.split()
         for left in range(len(words)):
             for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
                 word = ' '.join(words[left:right])
                 if word not in word2idx: continue
-                foo[word2idx[word]] += 1
-        for k, v in foo.items():
+                cache[word2idx[word]] += 1
+        for k, v in cache.items():
             d.append(v)
             r.append(idx)
             c.append(k)
@@ -326,6 +326,7 @@ def data2text(data, idx2word):
 
 # raw frequency to tfidf
 def data2tfidf(data):
+    "convert raw frequency to tfidf"
     transform = TfidfTransformer()
     return transform.fit_transform(data)
 
