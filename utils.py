@@ -262,6 +262,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 
 def df2texts(df, field):
+    "Convert dataframe to list of strings."
     texts = []
     for _, item in df.iterrows():
         if isinstance(item[field], str):
@@ -275,7 +276,7 @@ def df2texts(df, field):
     return texts
 
 
-def ngram_counter(texts, ngram=1, min_count=2):
+def ngram_vocab_processor(texts, ngram=1, min_count=2):
     "build vocab and return word2idx, idx2word. texts are list of space sperated words."
     dic = defaultdict(int)
     for text in texts:
@@ -284,14 +285,32 @@ def ngram_counter(texts, ngram=1, min_count=2):
             for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
                 dic[' '.join(words[left:right])] += 1
     dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
-    word2idx = {}
-    idx2word = []
+    # 'UNK' is used for padding and unknown words
+    word2idx = {'UNK':0}
+    idx2word = ['UNK']
     for idx, item in enumerate(dic):
         if item[1] < min_count:
             break
-        word2idx[item[0]] = idx
+        word2idx[item[0]] = idx + 1
         idx2word.append(item[0])
     return word2idx, idx2word
+
+
+def encode_texts(texts, word2idx):
+    "Encode texts using the dictionary word2idx. Prepare data for neural network"
+    maxlen = max(len(text) for text in texts)
+    n = len(texts)
+
+    output = []
+    for text in texts:
+        cache = np.zeros(maxlen, dtype=np.int)
+        for idx, word in enumerate(text.split()):
+            if word in word2idx:
+                cache[idx] = word2idx[word]
+        output.append(cache)
+
+    return output
+
 
 # text to matrix
 def text2data(texts, word2idx, ngram):
@@ -346,7 +365,7 @@ class Df2TFIDF(object):
             if field not in df.columns:
                 continue
             texts = df2texts(df, field)
-            word2idx, idx2word = ngram_counter(texts, ngram=ngram, min_count=min_count)
+            word2idx, idx2word = ngram_vocab_processor(texts, ngram=ngram, min_count=min_count)
             self.word2idx[field] = word2idx
             self.idx2word[field] = idx2word
 
