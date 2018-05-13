@@ -236,7 +236,6 @@ def list2str(l):
     else:
         return l
 
-
 #
 def null2empty(df, field):
     "Change null to [] in the dataframe"
@@ -261,7 +260,18 @@ import operator
 from sklearn.feature_extraction.text import TfidfTransformer
 
 
-def df2texts(df, field):
+def df2texts(df, fields):
+    cache = []
+    for field in fields:
+        cache.append(df2texts_single_field(df, field))
+
+    output = []
+    for i in range(len(cache[0])):
+        output.append(' '.join(item[i] for item in cache))
+    return output
+
+
+def df2texts_single_field(df, field):
     "Convert dataframe to list of strings."
     texts = []
     for _, item in df.iterrows():
@@ -296,15 +306,17 @@ def ngram_vocab_processor(texts, ngram=1, min_count=2):
     return word2idx, idx2word
 
 
-def encode_texts(texts, word2idx):
+def encode_texts(texts, word2idx, maxlen=None):
     "Encode texts using the dictionary word2idx. Prepare data for neural network"
-    maxlen = max(len(text) for text in texts)
-    n = len(texts)
+    if maxlen is None:
+        maxlen = max(len(text) for text in texts)
 
     output = []
     for text in texts:
         cache = np.zeros(maxlen, dtype=np.int)
         for idx, word in enumerate(text.split()):
+            if idx == maxlen:
+                break
             if word in word2idx:
                 cache[idx] = word2idx[word]
         output.append(cache)
@@ -353,28 +365,28 @@ def data2tfidf(data):
 # dataframe to tfidf wrapper (multi-fields)
 class Df2TFIDF(object):
     def __init__(self):
-        self.names = None
+        self.fields = None
         self.word2idx = {}
         self.idx2word = {}
         self.ngram = None
 
-    def fit(self, df, names, ngram=1, min_count=2):
-        self.names = names
+    def fit(self, df, ngram=1, min_count=2):
+        self.fields = df.columns[1:]
         self.ngram = ngram
-        for field in names:
+        for field in self.fields:
             if field not in df.columns:
                 continue
-            texts = df2texts(df, field)
+            texts = df2texts_single_field(df, field)
             word2idx, idx2word = ngram_vocab_processor(texts, ngram=ngram, min_count=min_count)
             self.word2idx[field] = word2idx
             self.idx2word[field] = idx2word
 
-    def transform(self, df, fields):
+    def transform(self, df):
         outputs = {}
-        for field in fields:
+        for field in self.fields:
             if field not in df.columns:
                 continue
-            texts = df2texts(df, field)
+            texts = df2texts_single_field(df, field)
             word2idx, idx2word = self.word2idx[field], self.idx2word[field]
             bow_count = text2data(texts, word2idx, self.ngram)
             bow_tfidf = data2tfidf(bow_count)
@@ -387,10 +399,14 @@ class Df2TFIDF(object):
             outputs[field] = foo
         return outputs
 
+    def fit_transform(self, df, ngram=1, min_count=2):
+        self.fit(df, ngram, min_count)
+        return self.transform(df)
+
     @property
     def idx2word_concat(self):
         output = []
-        for field in self.names:
+        for field in self.fields:
             output += self.idx2word[field]
         return output
 
