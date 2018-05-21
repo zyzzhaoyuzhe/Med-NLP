@@ -255,73 +255,144 @@ def null2empty(df, field):
     return df
 
 
+
+class Dataframe_Proc():
+    "process the dataframe"
+    @classmethod
+    def strs2str(cls, df, fields):
+        "convert list of strings to str for selected cells"
+        for row, item in df.iterrows():
+            for field in fields:
+                if isinstance(item[field], str):
+                    text = remove_puncdigit(item[field])
+                elif isinstance(item[field], list):
+                    text = ''
+                    for sent in item[field]:
+                        sent = remove_puncdigit(sent)
+                        text = ' '.join([text, sent])
+                df.loc[row, field] = text.strip()
+        return df
+
+    @classmethod
+    def df2text(cls, df, fields):
+        "Merge fields of texts and return a list"
+        output = []
+        for _, row in df.iterrows():
+            output.append(' '.join(row[fields]))
+        return output
+
+
+class Text_Proc():
+    "process list of strings"
+    @classmethod
+    def ngram_vocab_processor(cls, texts, ngram=1, min_count=2):
+        "build vocab and return word2idx, idx2word. texts are list of space sperated words."
+        dic = defaultdict(int)
+        for text in texts:
+            words = text.split()
+            for left in range(len(words)):
+                for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
+                    dic[' '.join(words[left:right])] += 1
+        dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
+        # 'UNK' is used for padding and unknown words
+        word2idx = {'UNK': 0}
+        idx2word = ['UNK']
+        for idx, item in enumerate(dic):
+            if item[1] < min_count:
+                break
+            word2idx[item[0]] = idx + 1
+            idx2word.append(item[0])
+        return word2idx, idx2word
+
+    @classmethod
+    def encode_texts(cls, texts, word2idx, maxlen=None):
+        "Encode texts using the dictionary word2idx. Prepare data for neural network"
+        if maxlen is None:
+            maxlen = max(len(text) for text in texts)
+
+        output = []
+        for text in texts:
+            cache = np.zeros(maxlen, dtype=np.int)
+            for idx, word in enumerate(text.split()):
+                if idx == maxlen:
+                    break
+                if word in word2idx:
+                    cache[idx] = word2idx[word]
+            output.append(cache)
+
+        return output
+
+
+
 ## Get Bag of ngrams and transforms
 import operator
 from sklearn.feature_extraction.text import TfidfTransformer
 
 
-def df2texts(df, fields):
-    cache = []
-    for field in fields:
-        cache.append(df2texts_single_field(df, field))
-
-    output = []
-    for i in range(len(cache[0])):
-        output.append(' '.join(item[i] for item in cache))
-    return output
-
-
-def df2texts_single_field(df, field):
-    "Convert dataframe to list of strings."
-    texts = []
-    for _, item in df.iterrows():
-        if isinstance(item[field], str):
-            foo = remove_puncdigit(item[field])
-        elif isinstance(item[field], list):
-            foo = ''
-            for sent in item[field]:
-                sent = remove_puncdigit(sent)
-                foo = ' '.join([foo, sent])
-        texts.append(foo.strip())
-    return texts
+# def df2texts(df, fields):
+#     "Mix two fields of text together"
+#     cache = []
+#     for field in fields:
+#         cache.append(df2texts_single_field(df, field))
+#
+#     output = []
+#     for i in range(len(cache[0])):
+#         output.append(' '.join(item[i] for item in cache))
+#     return output
 
 
-def ngram_vocab_processor(texts, ngram=1, min_count=2):
-    "build vocab and return word2idx, idx2word. texts are list of space sperated words."
-    dic = defaultdict(int)
-    for text in texts:
-        words = text.split()
-        for left in range(len(words)):
-            for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
-                dic[' '.join(words[left:right])] += 1
-    dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
-    # 'UNK' is used for padding and unknown words
-    word2idx = {'UNK':0}
-    idx2word = ['UNK']
-    for idx, item in enumerate(dic):
-        if item[1] < min_count:
-            break
-        word2idx[item[0]] = idx + 1
-        idx2word.append(item[0])
-    return word2idx, idx2word
+# def df2texts_single_field(df, field):
+#     "Convert dataframe to one long string. ()"
+#     texts = []
+#     for _, item in df.iterrows():
+#         if isinstance(item[field], str):
+#             foo = remove_puncdigit(item[field])
+#         elif isinstance(item[field], list):
+#             foo = ''
+#             for sent in item[field]:
+#                 sent = remove_puncdigit(sent)
+#                 foo = ' '.join([foo, sent])
+#         df.loc[_, 'field'] = foo.strip()
+#         # texts.append(foo.strip())
+#     return df
 
 
-def encode_texts(texts, word2idx, maxlen=None):
-    "Encode texts using the dictionary word2idx. Prepare data for neural network"
-    if maxlen is None:
-        maxlen = max(len(text) for text in texts)
+# def ngram_vocab_processor(texts, ngram=1, min_count=2):
+#     "build vocab and return word2idx, idx2word. texts are list of space sperated words."
+#     dic = defaultdict(int)
+#     for text in texts:
+#         words = text.split()
+#         for left in range(len(words)):
+#             for right in range(left + 1, min(len(words) + 1, left + ngram + 1)):
+#                 dic[' '.join(words[left:right])] += 1
+#     dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
+#     # 'UNK' is used for padding and unknown words
+#     word2idx = {'UNK':0}
+#     idx2word = ['UNK']
+#     for idx, item in enumerate(dic):
+#         if item[1] < min_count:
+#             break
+#         word2idx[item[0]] = idx + 1
+#         idx2word.append(item[0])
+#     return word2idx, idx2word
 
-    output = []
-    for text in texts:
-        cache = np.zeros(maxlen, dtype=np.int)
-        for idx, word in enumerate(text.split()):
-            if idx == maxlen:
-                break
-            if word in word2idx:
-                cache[idx] = word2idx[word]
-        output.append(cache)
 
-    return output
+# def encode_texts(texts, word2idx, maxlen=None):
+#     "Encode texts using the dictionary word2idx. Prepare data for neural network"
+#     if maxlen is None:
+#         maxlen = max(len(text) for text in texts)
+#
+#     output = []
+#     for text in texts:
+#         cache = np.zeros(maxlen, dtype=np.int)
+#         for idx, word in enumerate(text.split()):
+#             if idx == maxlen:
+#                 break
+#             if word in word2idx:
+#                 cache[idx] = word2idx[word]
+#         output.append(cache)
+#
+#     return output
 
 
 # text to matrix
