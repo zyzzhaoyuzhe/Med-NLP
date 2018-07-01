@@ -11,12 +11,13 @@ from tensorflow.contrib import learn
 import utils
 import data_helpers
 import pickle
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 # Load
 df_processed = pickle.load(open('Data/DataFrame_processed.p', 'rb'))
 
 # To predict PAST
-TO_PREDICT = 'Past'
+TO_PREDICT = 'Grade'
 FIELDS = [
     'history',
     'findings',
@@ -24,14 +25,19 @@ FIELDS = [
     'impression'
 ]
 
-df_filtered = df_processed[~df_processed[TO_PREDICT].isnull() & df_processed[TO_PREDICT] != 0].sample(frac=1, random_state=1)
+# df_filtered = df_processed[~df_processed[TO_PREDICT].isnull() & (df_processed[TO_PREDICT] != 0)].sample(frac=1, random_state=1)
+df_filtered = df_processed[~df_processed[TO_PREDICT].isnull()].sample(frac=1, random_state=1)
 df_filtered = df_filtered[[TO_PREDICT] + FIELDS]
 
 df_train = df_filtered.iloc[:1220]
 y_train = np.array(df_train[TO_PREDICT].astype(int))
+enc = LabelEncoder()
+enc.fit(y_train)
+y_train = enc.transform(y_train)
 
 df_test = df_filtered.iloc[1220:]
 y_test = np.array(df_test[TO_PREDICT].astype(int))
+y_test = enc.transform(y_test)
 
 print(df_train.shape)
 print(df_test.shape)
@@ -48,15 +54,15 @@ x_train_text = utils.Dataframe_Proc.df2text(df_train, df_train.columns[1:])
 word2idx, idx2word = utils.Text_Proc.ngram_vocab_processor(x_train_text, ngram=1, min_count=2)
 x_train = np.array(utils.Text_Proc.encode_texts(x_train_text, word2idx, maxlen=sum(maxlen)))
 
-y_train = df_train[TO_PREDICT].values[:, None]
-y_train = np.concatenate([(y_train + 1) / 2, (1 - y_train) / 2], axis=1).astype(np.int)
+enc = OneHotEncoder(sparse=False)
+y_train = enc.fit_transform(y_train[:, None])
 
 x_dev_text = utils.Dataframe_Proc.df2text(df_test, df_test.columns[1:])
 x_dev = np.array(utils.Text_Proc.encode_texts(x_dev_text, word2idx, maxlen=x_train.shape[1]))
 
-y_dev = df_test[TO_PREDICT].values[:, None]
-y_dev = np.concatenate([(y_dev + 1) / 2, (1 - y_dev) / 2], axis=1).astype(np.int)
-x_text = utils.Dataframe_Proc.df2text(df_train, df_train.columns[1:])
+y_dev = enc.transform(y_test[:, None])
+
+# x_text = utils.Dataframe_Proc.df2text(df_train, df_train.columns[1:])
 
 
 # Training data (Field Aware)
@@ -93,12 +99,15 @@ del x_train_text
 tf.flags.DEFINE_integer("embedding_dim", 64, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
 tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularization lambda (default: 0.0)")
+
 # CNN parameter
-tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
-tf.flags.DEFINE_integer("num_filters", 32, "Number of filters per filter size (default: 128)")
+tf.flags.DEFINE_string("filter_sizes", "3,4", "Comma-separated filter sizes (default: '3,4,5')")
+tf.flags.DEFINE_integer("num_filters", 64, "Number of filters per filter size (default: 128)")
+
 # RNN parameter
 tf.flags.DEFINE_integer('hidden_size', 64, 'Hidden size of LSTM')
 tf.flags.DEFINE_integer('num_layers', 1, 'Number of LSTM layers')
+
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
@@ -135,13 +144,13 @@ with tf.Graph().as_default():
         #     num_filters=FLAGS.num_filters,
         #     l2_reg_lambda=FLAGS.l2_reg_lambda)
 
-        model = TextCNN_field_aware(sequence_lengths=maxlen,
-                                    num_classes=y_train.shape[1],
-                                    vocab_size=len(word2idx),
-                                    embedding_size=FLAGS.embedding_dim,
-                                    filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
-                                    num_filters=FLAGS.num_filters,
-                                    l2_reg_lambda=FLAGS.l2_reg_lambda)
+        # model = TextCNN_field_aware(sequence_lengths=maxlen,
+        #                             num_classes=y_train.shape[1],
+        #                             vocab_size=len(word2idx),
+        #                             embedding_size=FLAGS.embedding_dim,
+        #                             filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
+        #                             num_filters=FLAGS.num_filters,
+        #                             l2_reg_lambda=FLAGS.l2_reg_lambda)
 
         # model = TextRNN(sequence_length=sum(maxlen),
         #                 num_classes=y_train.shape[1],
@@ -159,13 +168,13 @@ with tf.Graph().as_default():
         #                             num_layers=FLAGS.num_layers,
         #                             l2_reg_lambda=FLAGS.l2_reg_lambda)
 
-        # model = TextRNN_attention(sequence_length=sum(maxlen),
-        #                 num_classes=y_train.shape[1],
-        #                 vocab_size=len(word2idx),
-        #                 embedding_size=FLAGS.embedding_dim,
-        #                 hidden_size=FLAGS.hidden_size,
-        #                 num_layers=FLAGS.num_layers,
-        #                 l2_reg_lambda=FLAGS.l2_reg_lambda)
+        model = TextRNN_attention(sequence_length=sum(maxlen),
+                        num_classes=y_train.shape[1],
+                        vocab_size=len(word2idx),
+                        embedding_size=FLAGS.embedding_dim,
+                        hidden_size=FLAGS.hidden_size,
+                        num_layers=FLAGS.num_layers,
+                        l2_reg_lambda=FLAGS.l2_reg_lambda)
 
 
         # Define Training procedure
@@ -278,3 +287,15 @@ with tf.Graph().as_default():
                 path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                 print("Saved model checkpoint to {}\n".format(path))
 
+        #
+        feed_dict = {
+            model.input_x: x_dev,
+            model.input_y: y_dev,
+            model.dropout_keep_prob: 1.0,
+            model.batch_size: len(x_dev)
+        }
+        y_pred = sess.run(model.predictions, feed_dict=feed_dict)
+
+
+print(utils.my_classification_report(np.argmax(y_dev, axis=1),
+                                     y_pred))

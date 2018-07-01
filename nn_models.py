@@ -95,6 +95,11 @@ class TextCNN_field_aware(object):
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
         self.batch_size = tf.placeholder(tf.int32, name='batch_size', shape=[])
 
+        # Embedding layer for all fields
+        with tf.device('/cpu:0'), tf.name_scope("embedding"):
+            self.embedding = tf.Variable(
+                tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+
         # Keeping track of l2 regularization loss (optional)
         l2_loss = tf.constant(0.0)
 
@@ -142,16 +147,18 @@ class TextCNN_field_aware(object):
             correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_y, 1))
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-
     def cnn_one_field(self, id, seq_start, seq_end, vocab_size, embedding_size, filter_sizes, num_filters):
-
         sequence_length = seq_end - seq_start
-
         with tf.name_scope("CNN_%d" % id):
             # embedding layer
             with tf.device('/cpu:0'), tf.name_scope("embedding"):
-                W = tf.Variable(
-                    tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+
+                # Embedding Layer for all fields
+                W = self.embedding
+                # Embedding Layer for this Field
+                # W = tf.Variable(
+                #     tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+
                 embedded_chars = tf.nn.embedding_lookup(W, self.input_x[:, seq_start:seq_end])
                 embedded_chars_expanded = tf.expand_dims(embedded_chars, -1)
 
@@ -254,6 +261,7 @@ class TextRNN(object):
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
 
+# TODO: Not a good model
 class TextRNN_field_aware(object):
     def __init__(
             self, sequence_lengths, num_classes, vocab_size,
@@ -263,6 +271,11 @@ class TextRNN_field_aware(object):
         self.input_y = tf.placeholder(tf.float32, [None, num_classes], name="input_y")
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
         self.batch_size = tf.placeholder(tf.int32, name='batch_size', shape=[])
+
+        # Embedding Layer
+        with tf.device('/cpu:0'), tf.name_scope("embedding"):
+            self.embedding = tf.Variable(
+                tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
 
         # break input_x input multiple pieces
         outputs = []
@@ -311,8 +324,12 @@ class TextRNN_field_aware(object):
                       hidden_size, num_layers):
         # Embedding layer
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
-            W = tf.Variable(
-                tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+            # Embedding (unified)
+            W = self.embedding
+            # # Embedding (for each field)
+            # W = tf.Variable(
+            #     tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+
             embedded_chars = tf.nn.embedding_lookup(W, self.input_x[:, seq_start:seq_end])
 
         # LSTM
@@ -335,8 +352,6 @@ class TextRNN_field_aware(object):
                 outputs.append(tf.expand_dims(cell_output, axis=1))
             output = tf.concat(outputs, axis=1)
         return output
-
-
 
 
 class TextRNN_attention(object):

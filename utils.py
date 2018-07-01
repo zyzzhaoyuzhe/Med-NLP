@@ -322,6 +322,14 @@ class Text_Proc():
 
         return output
 
+    @classmethod
+    def decode_texts(cls, indices, idx2word):
+        output = []
+        for idx in indices:
+            output.append(idx2word[idx])
+        return output
+
+
 
 
 ## Get Bag of ngrams and transforms
@@ -447,8 +455,11 @@ class Df2TFIDF(object):
         for field in self.fields:
             if field not in df.columns:
                 continue
-            texts = df2texts_single_field(df, field)
-            word2idx, idx2word = ngram_vocab_processor(texts, ngram=ngram, min_count=min_count)
+
+            # texts = df2texts_single_field(df, field)
+            texts = Dataframe_Proc.df2text(df, [field])
+
+            word2idx, idx2word = Text_Proc.ngram_vocab_processor(texts, ngram=ngram, min_count=min_count)
             self.word2idx[field] = word2idx
             self.idx2word[field] = idx2word
 
@@ -457,7 +468,7 @@ class Df2TFIDF(object):
         for field in self.fields:
             if field not in df.columns:
                 continue
-            texts = df2texts_single_field(df, field)
+            texts = Dataframe_Proc.df2text(df, [field])
             word2idx, idx2word = self.word2idx[field], self.idx2word[field]
             bow_count = text2data(texts, word2idx, self.ngram)
             bow_tfidf = data2tfidf(bow_count)
