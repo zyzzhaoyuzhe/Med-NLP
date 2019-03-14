@@ -493,6 +493,10 @@ class Df2TFIDF(object):
         return output
 
 
+###############################################################
+# Analyze results
+###############################################################
+
 # Display Results.
 def my_classification_report(y_true, y_pred):
     labels = sorted(set(y_true))
@@ -511,3 +515,12 @@ def my_classification_report(y_true, y_pred):
                         'accuracy': accuracy,
                         })
     return output
+
+# bootstrap results to compute the confidence interval.
+def bootstrap_prediction(y, y_pred, times=1000):
+    nsample = y.shape[0]
+    results = []
+    for _ in range(times):
+        indices = np.random.randint(0, nsample, nsample)
+        results.append(my_classification_report(y[indices], y_pred[indices]))
+    return pd.concat(results, axis=1).transpose()
