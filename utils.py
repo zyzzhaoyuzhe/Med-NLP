@@ -12,7 +12,7 @@ import sklearn
 from fuzzywuzzy import fuzz
 from nltk.corpus import wordnet
 from nltk.tokenize import word_tokenize
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 VELO_NAMES = {
     'cca': ['common carotid', 'cca'],
@@ -236,6 +236,7 @@ def list2str(l):
     else:
         return l
 
+
 #
 def null2empty(df, field):
     "Change null to [] in the dataframe"
@@ -255,9 +256,9 @@ def null2empty(df, field):
     return df
 
 
-
 class Dataframe_Proc():
     "process the dataframe"
+
     @classmethod
     def strs2str(cls, df, fields):
         "convert list of strings to str for selected cells"
@@ -284,6 +285,7 @@ class Dataframe_Proc():
 
 class Text_Proc():
     "process list of strings"
+
     @classmethod
     def ngram_vocab_processor(cls, texts, ngram=1, min_count=2):
         "build vocab and return word2idx, idx2word. texts are list of space sperated words."
@@ -328,8 +330,6 @@ class Text_Proc():
         for idx in indices:
             output.append(idx2word[idx])
         return output
-
-
 
 
 ## Get Bag of ngrams and transforms
@@ -502,19 +502,22 @@ def my_classification_report(y_true, y_pred):
     labels = sorted(set(y_true))
     CM = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=labels)
     CM = pd.DataFrame(CM, columns=labels, index=labels)
-    sensitivity = CM.iloc[1, 1] / CM.iloc[1, :].sum()
+    sensitivity = recall_score(y_true, y_pred)
     specificity = CM.iloc[0, 0] / CM.iloc[0, :].sum()
-    precision = CM.iloc[1, 1] / CM.iloc[:, 1].sum()
-    NPV = CM.iloc[0, 0] / CM.iloc[:, 0].sum()
-    accuracy = np.trace(CM.values) / CM.values.sum()
+    precision = precision_score(y_true, y_pred)
+    # NPV = CM.iloc[0, 0] / CM.iloc[:, 0].sum()
+    accuracy = accuracy_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
 
     output = pd.Series({'sensitivity': sensitivity,
                         'specificity': specificity,
                         'precision': precision,
-                        'NPV': NPV,
+                        # 'NPV': NPV,
                         'accuracy': accuracy,
+                        'f1': f1,
                         })
     return output
+
 
 # bootstrap results to compute the confidence interval.
 def bootstrap_prediction(y, y_pred, times=1000):
@@ -524,3 +527,35 @@ def bootstrap_prediction(y, y_pred, times=1000):
         indices = np.random.randint(0, nsample, nsample)
         results.append(my_classification_report(y[indices], y_pred[indices]))
     return pd.concat(results, axis=1).transpose()
+
+
+def boostrap_prediction_diff(y1, y1_pred, y2, y2_pred, times=1000):
+    nsample1 = y1.shape[0]
+    nsample2 = y2.shape[0]
+    results = []
+    for _ in range(times):
+        indices1 = np.random.randint(0, nsample1, nsample1)
+        indices2 = np.random.randint(0, nsample2, nsample2)
+        results.append(
+            my_classification_report(y2[indices2], y2_pred[indices2]) -
+            my_classification_report(y1[indices1], y1_pred[indices1]))
+    return pd.concat(results, axis=1).transpose()
+
+
+def output_report(y, y_predict):
+    output = my_classification_report(y, y_predict)
+    results = bootstrap_prediction(y, y_predict, times=1000)
+    for key in results.keys().values:
+        s = "[{:.4f}, {:.4f}]".format(np.percentile(results[key], 5), np.percentile(results[key], 95))
+        output[key + " CI"] = s
+    return output
+
+
+def output_report_diff(y1, y1_predict, y2, y2_predict):
+    """Report numbers for y2 - y1. y1 should be the baseline."""
+    output = my_classification_report(y2, y2_predict) - my_classification_report(y1, y1_predict)
+    results = boostrap_prediction_diff(y1, y1_predict, y2, y2_predict, times=1000)
+    for key in results.keys().values:
+        s = "[{:.4f}, {:.4f}]".format(np.percentile(results[key], 5), np.percentile(results[key], 95))
+        output[key + " CI"] = s
+    return output
